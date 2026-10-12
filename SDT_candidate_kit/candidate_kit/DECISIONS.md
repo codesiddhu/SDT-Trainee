@@ -1,0 +1,7 @@
+# DECISIONS.md
+
+1. **Indexes.** Unique `(emp_code, date)` on logs: it is the one-record-per-day guarantee and serves lookups by employee and month. `(date desc, emp_code)` serves the attendance list sort. `(status, date, emp_code)` serves status filters. `(emp_code, punch_in desc)` finds the record to punch out. `(date, late_minutes, emp_code)` is a covering index for the leaderboard. On employees: unique `emp_code`, plus `(department, joined_on)` and `joined_on` for analytics. I rejected a `department` field copied onto every log: it would speed joins but go stale when an employee moves.
+2. **Punch-in race.** Both requests compute the same record and call `insert_one`. The unique index lets exactly one succeed; the other gets `DuplicateKeyError`, which I return as 409. No check-then-insert.
+3. **Ties.** The leaderboard ranks with `$rank` (1, 2, 2, 4) and then filters `rank <= limit`, so everyone tied at the cutoff is included and the response can be longer than `limit`.
+4. **Headcount.** The department summary starts from `employees` (joined on or before month end) and left-joins each person's logs with `$lookup`; an empty log list still counts as one person.
+5. **100x data.** I would pre-aggregate daily per-department numbers when a record is written, so analytics read a small summary collection instead of scanning raw logs.
